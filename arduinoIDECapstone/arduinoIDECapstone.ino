@@ -24,7 +24,7 @@ int64_t values_time[50];
 int idx;
 int i;
 
-int detectForCrash = 0;
+int potentialCrash = 0;
 int crash = 0;
 
 void setup() {
