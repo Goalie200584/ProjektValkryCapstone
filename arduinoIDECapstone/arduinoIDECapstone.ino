@@ -1,10 +1,19 @@
 //Test Script using ESP32 DEVBOARD
 #include <Wire.h>
 #include <ISM330DLCSensor.h>
+#include <SPI.h>
+#include <SD.h>
+#include <FS.h>
+
 #define sdaPin 21
 #define sclPin 22
 
 #define limit 5000 // Limit for flagging a potential crash in mg, 12 g's or 12000 mg's
+
+#define MISO 19
+#define MOSI 23
+#define SCK 18
+#define CS 5
 
 TwoWire bus = TwoWire(1); // starts I2C
 ISM330DLCSensor AccGyr(&bus, ISM330DLC_ACC_GYRO_I2C_ADDRESS_LOW); // INitializes IMU
