@@ -21,7 +21,6 @@ int64_t values_time[50];
 int idx;
 int i;
 
-int potentialCrash = 0;
 bool regSetOK;
 
 float values_accelerometer[50]; // Array for history of acceleration values for the total acceleration vector
