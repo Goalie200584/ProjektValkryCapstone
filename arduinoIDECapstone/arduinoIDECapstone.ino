@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include <ISM330DLCSensor.h>
 #include <imu_regs.h>
+#include <BluetoothSerial.h>
 #define sdaPin 21
 #define sclPin 22
 
@@ -9,6 +10,7 @@
 
 TwoWire bus = TwoWire(1); // starts I2C
 ISM330DLCSensor AccGyr(&bus, ISM330DLC_ACC_GYRO_I2C_ADDRESS_LOW); // INitializes IMU
+BluetoothSerial SerialBT;
 
 int32_t accelerometer[3]; // Accelerometer will hold 3 values for x y and z
 int32_t gyroscope[3]; // gyroscope will hold 3 values for x y and z
@@ -50,6 +52,9 @@ void setup() {
   if (!imu::setRegister(bus, imu::CNTRL1_XL, imu::ODR_XL_833HZ, imu::FS_XL_16G)) {
     Serial.println("Accel config failed");
   } 
+
+  SerialBT.begin("Projekt Valkry"); // Turns on Bluetooth Serial
+  SerialBT.setTimeout(50); // Doesn't wait long if a line has no newline
 
   idx = 0;
   
