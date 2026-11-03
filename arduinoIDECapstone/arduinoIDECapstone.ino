@@ -29,7 +29,7 @@ float values_accelerometer[50]; // Array for history of acceleration values for 
 
 int detectForCrash = 0;
 int crash = 0;
-int show = 1;
+int show = 0;
 
 
 
@@ -40,6 +40,26 @@ float power_of(float number, int power){
   }
   return running;
 }
+
+void readingsSwitch(){
+  if (!SerialBT.available()) return;
+  String cmd = SerialBT.readStringUntil('\n');
+  cmd.trim(); // strip \r and \n 
+  cmd.toLowerCase(); // turns to lower case
+
+  if (cmd == "on"){
+    show = 1;
+  }
+  else if (cmd == "off"){
+    show = 0;
+  }
+}
+
+String fmt(float v, const char *unit) { // Formats Strings for readability in SerialBT.println()
+  if (isnan(v)) return "ER";
+  return String((int)round(v)) + unit;
+}
+
 
 void setup() {
   Serial.begin(115200);
@@ -61,6 +81,8 @@ void setup() {
 }
 
 void loop() {
+  readingsSwitch();
+  
   start_time = esp_timer_get_time();
   AccGyr.Get_X_Axes(accelerometer);
   AccGyr.Get_G_Axes(gyroscope);
@@ -68,19 +90,17 @@ void loop() {
 
   avg_time = (start_time + end_time) / 2;
 
-  values_accelerometer[idx] = sqrt((power_of((float)accelerometer[0], 2) + power_of((float)accelerometer[1], 2) + power_of((float)accelerometer[2], 2)));
+  values_accelerometer[idx] = sqrt((power_of((float)accelerometer[0], 2) + power_of((float)accelerometer[1], 2) + power_of((float)accelerometer[2], 2))); // Standardizes X, Y and Z axis into one vector
   values_time[idx] = avg_time;
-  
 
+  if (show == 1){
+    SerialBT.print(fmt(values_accelerometer[idx], "mg's; "));
+    SerialBT.println(fmt(values_time[idx], "Time"));
 
-  if (values_accelerometer[idx] >= limit && show == 1){
-    Serial.println(values_accelerometer[idx]);
-    Serial.println("We have exceeded the limit my friend");
-    show = 0;
+    Serial.print(fmt(values_accelerometer[idx], "mg's; "));
+    Serial.println(fmt(values_time[idx], "Time"));
   }
-  else if (values_accelerometer[idx] < limit && show == 1){
-    Serial.println(values_accelerometer[idx]);
-  }
+
 
 
   idx++;
