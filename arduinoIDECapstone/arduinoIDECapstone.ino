@@ -27,10 +27,11 @@ bool regSetOK;
 
 float values_accelerometer[50]; // Array for history of acceleration values for the total acceleration vector
 
-int detectForCrash = 0;
+int potentialCrash = 0;
 int crash = 0;
-int show = 1;
 
+int64_t largestAccelTime = 0;
+float largestAccel = 0;
 
 
 float power_of(float number, int power){
@@ -42,7 +43,7 @@ float power_of(float number, int power){
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200);12000
   bus.begin(sdaPin, sclPin);
 
   AccGyr.begin();
@@ -69,24 +70,30 @@ void loop() {
   avg_time = (start_time + end_time) / 2;
 
   values_accelerometer[idx] = sqrt((power_of((float)accelerometer[0], 2) + power_of((float)accelerometer[1], 2) + power_of((float)accelerometer[2], 2)));
-  values_time[idx] = avg_time;
+  values_time[idx] = avg_time; 
   
 
 
-  if (values_accelerometer[idx] >= limit && show == 1){
+  if (values_accelerometer[idx] >= limit){
     Serial.println(values_accelerometer[idx]);
     Serial.println("We have exceeded the limit my friend");
-    show = 0;
-  }
-  else if (values_accelerometer[idx] < limit && show == 1){
-    Serial.println(values_accelerometer[idx]);
+    potentialCrash = 1; 
+    largestAccelTime = avg_time;
+    if (largestAccel < values_accelerometer[idx]){
+      largestAccel = values_accelerometer[idx];
+    }
   }
 
+
+  if (potentialCrash == 1){
+    // Use SUvat equation V = u + a(t- t0) where u = 0
+  }
 
   idx++;
   if (idx >= 50){
     idx = 0;
   }
+
 
 
 
