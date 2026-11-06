@@ -1,7 +1,7 @@
 # function assumes 1 event per file, ie. one drop, one crash, etc etc
 import statistics
 
-with open ("configData_floordrop.txt", "r") as file:
+with open ("capture.txt", "r") as file:
     crash = int(input("Was this a crash? Reply 1 or 0: "))
     mg_values = []
     time_values = []
@@ -21,7 +21,7 @@ with open ("configData_floordrop.txt", "r") as file:
             lines_skipped += 1
             continue
         else:
-            mg = int(i[1][:-5])
+            mg = int(i[1][:-4])
             time = int(i[2][:-5])
             mg_values.append(mg)
             time_values.append(time)
@@ -40,35 +40,38 @@ with open ("configData_floordrop.txt", "r") as file:
 std_dev = statistics.pstdev(mg_values)
 
 in_crash_range = 0
-idx_range = 30
-start_time = None
-endtime = None
+start_idx = max_mg_idx
+end_idx = max_mg_idx
+start_time = -1
+end_time = -1
+start_value = -1
+end_value = -1
+threshold = avg_mg + (2*std_dev)
 
 if max_mg != 0:
-    if max_mg_idx < idx_range:
-        start_idx = 0
-        end_idx = max_mg_idx + idx_range
-    elif len(mg_values) - max_mg_idx < idx_range:
-        start_idx = max_mg_idx - idx_range
-        end_idx = len(mg_values) - 1
-    else:
-        start_idx = max_mg_idx - idx_range
-        end_idx = max_mg_idx + idx_range
+    while(mg_values[start_idx - 1] > threshold): #Left Check for time and spike to plot
+        if start_idx <= 1:
+            start_idx = 0
+            break
+        start_idx -= 1
+    start_value = mg_values[start_idx]
+    start_time = time_values[start_idx]
 
-    for x in range(start_idx, end_idx + 1):
-        if in_crash_range == 0 and mg_values[x] > avg_mg + std_dev:
-            in_crash_range = 1
-            start_time = time_values[x]
-        elif in_crash_range == 1 and mg_values[x] > avg_mg + std_dev:
-            continue
-        elif in_crash_range == 1 and mg_values[x] < avg_mg + std_dev:
-            in_crash_range = 0
-            end_time = time_values[x]
+    while(mg_values[end_idx + 1] > threshold): #Right check for the timeand spike to plot
+        if end_idx >= len(mg_values) - 2:
+            end_idx = len(mg_values) - 1
+            break
+        end_idx += 1
+    end_value = mg_values[end_idx]
+    end_time = time_values[end_idx]
 
-if start_time == None or end_time == None:
-    raise ValueError("")
+
+
+if start_time == -1 or end_time == -1:
+    raise ValueError("Time Not Defined, Incident not Detected")
 impact_time = end_time - start_time #in ms
-line = [f"\n{crash}, {max_mg}, {min_mg}, {avg_mg}, {impact_time}"]
+line = f"\n{crash}, {max_mg}, {min_mg}, {avg_mg}, {impact_time}"
+print(line)
 # if crash == 0:
 #     with open("non-crashes.csv", "a") as no_crash_file:
         
@@ -77,8 +80,8 @@ line = [f"\n{crash}, {max_mg}, {min_mg}, {avg_mg}, {impact_time}"]
 
 
 
-print(max_mg)
-print(min_mg)
-print(avg_mg)
+# print(max_mg)
+# print(min_mg)
+# print(avg_mg)
         
 
