@@ -30,6 +30,7 @@ int i;
 bool regSetOK;
 
 std::vector<float> output_accelerometer;
+std::vector<float> output_gyroscope;
 std::vector<int64_t> output_times;
 int output_arr_idx = 0;
 
@@ -37,6 +38,7 @@ String output_line;
 String new_filename;
 
 float values_accelerometer[50]; // Array for history of acceleration values for the total acceleration vector
+float values_gyro[50];
 
 int detectForCrash = 0;
 int crash = 0;
@@ -82,11 +84,12 @@ void writeToSD(){
   
   File file = SD.open(new_filename, FILE_APPEND);
   for(i = 0; i < output_accelerometer.size(); i++){
-    output_line = (String)output_accelerometer[i] + "mg's " + output_times[i] + "Time";
+    output_line = (String)output_accelerometer[i] + "mg's " + (String)output_gyroscope[i]+ "m/s^2" + output_times[i] + "Time";
     file.println(output_line);
   }
   file.close();
   output_accelerometer.clear();
+  output_gyroscope.clear();
   output_times.clear();
 }
 
@@ -131,6 +134,7 @@ void setup() {
   SerialBT.begin("Projekt Valkry"); // Turns on Bluetooth Serial
   SerialBT.setTimeout(50); // Doesn't wait long if a line has no newline
   output_accelerometer.reserve(2000);
+  output_gyroscope.reserve(2000);
   output_times.reserve(2000);
 
   if (!SD.begin(5)) { // CS pin = 5
@@ -154,7 +158,8 @@ void loop() {
 
   avg_time = (start_time + end_time) / 2;
 
-  values_accelerometer[idx] = sqrt((power_of((float)accelerometer[0], 2) + power_of((float)accelerometer[1], 2) + power_of((float)accelerometer[2], 2))); // Standardizes X, Y and Z axis into one vector
+  values_accelerometer[idx] = sqrt((power_of((float)accelerometer[0], 2) + power_of((float)accelerometer[1], 2) + power_of((float)accelerometer[2], 2))); // Standardizes X, Y and Z axes into one vector
+  values_gyro[x] = sqrt((power_of((float)gyroscope[0], 2) + power_of((float)gyroscope[1], 2) + power_of((float)gyroscope[2], 2))); // Standardizes X, Y, Z axes to one vector
   values_time[idx] = avg_time;
 
   
