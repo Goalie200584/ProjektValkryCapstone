@@ -9,7 +9,7 @@
 #define limit 12000 // Limit for flagging a potential crash in mg, 12 g's or 12000 mg's
 
 TwoWire bus = TwoWire(1); // starts I2C
-ISM330DLCSensor AccGyr(&bus, ISM330DLC_ACC_GYRO_I2C_ADDRESS_LOW); // INitializes IMU
+ISM330DLCSensor AccGyr(&bus, ISM330DLC_ACC_GYRO_I2C_ADDRESS_LOW); // Initializes IMU
 BluetoothSerial SerialBT;
 
 int32_t accelerometer[3]; // Accelerometer will hold 3 values for x y and z
@@ -18,7 +18,7 @@ int32_t gyroscope[3]; // gyroscope will hold 3 values for x y and z
 int64_t start_time; 
 int64_t end_time;
 int64_t avg_time; // For discovering how long the "spike" was
-int64_t values_time[50];
+
 
 int idx;
 int i;
@@ -26,6 +26,8 @@ int i;
 bool regSetOK;
 
 float values_accelerometer[50]; // Array for history of acceleration values for the total acceleration vector
+float values_gyro[50];
+int64_t values_time[50];
 
 int potentialCrash = 0;
 int crash = 0;
@@ -33,6 +35,7 @@ int crash = 0;
 int64_t largestAccelTime = 0;
 float largestAccel = 0;
 
+int64_t delta_t;
 
 float power_of(float number, int power){
   float running = 1;
@@ -43,7 +46,7 @@ float power_of(float number, int power){
 }
 
 void setup() {
-  Serial.begin(115200);12000
+  Serial.begin(115200); 
   bus.begin(sdaPin, sclPin);
 
   AccGyr.begin();
@@ -69,24 +72,25 @@ void loop() {
 
   avg_time = (start_time + end_time) / 2;
 
-  values_accelerometer[idx] = sqrt((power_of((float)accelerometer[0], 2) + power_of((float)accelerometer[1], 2) + power_of((float)accelerometer[2], 2)));
+  values_accelerometer[idx] = sqrt((power_of((float)accelerometer[0], 2) + power_of((float)accelerometer[1], 2) + power_of((float)accelerometer[2], 2))); // Standardizes acceleration to one vector
+  values_gyro[idx] = sqrt((power_of((float)gyroscope[0], 2) + power_of((float)gyroscope[1], 2) + power_of((float)gyroscope[2], 2))); // Standardizes gyro to one vector
   values_time[idx] = avg_time; 
-  
-
 
   if (values_accelerometer[idx] >= limit){
     Serial.println(values_accelerometer[idx]);
     Serial.println("We have exceeded the limit my friend");
     potentialCrash = 1; 
-    largestAccelTime = avg_time;
+    largestAccelTime = avg_time; // also t0
     if (largestAccel < values_accelerometer[idx]){
       largestAccel = values_accelerometer[idx];
     }
   }
 
+  else if (potentialCrash == 1 && (values_time[idx] - ((largestAccelTime)/1000) >= 5)){ //Compares whether delta t (t - t0) is greater than 5 seconds
+    delta_t = values_time[idx] - ((largestAccelTime)/1000);
+    
+    
 
-  if (potentialCrash == 1){
-    // Use SUvat equation V = u + a(t- t0) where u = 0
   }
 
   idx++;
