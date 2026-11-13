@@ -26,7 +26,7 @@ int i;
 bool regSetOK;
 
 float values_accelerometer[50]; // Array for history of acceleration values for the total acceleration vector
-float values_gyro[50];
+float values_gyro[50]; 
 int64_t values_time[50];
 
 int potentialCrash = 0;
