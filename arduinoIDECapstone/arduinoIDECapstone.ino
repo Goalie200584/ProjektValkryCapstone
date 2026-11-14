@@ -3,10 +3,15 @@
 #include <ISM330DLCSensor.h>
 #include <imu_regs.h>
 #include <BluetoothSerial.h>
+#include <SD.h>
 
 #define sdaPin 21
 #define sclPin 22
-#define limit 12000 // Limit for flagging a potential crash in mg, 12 g's or 12000 mg's
+#define limit 5000 // Limit for flagging a potential crash in mg, 12 g's or 12000 mg's
+
+#define RED 27
+#define BLUE 12
+#define GREEN 14
 
 #define frequency 833
 
@@ -32,16 +37,19 @@ bool regSetOK;
 
 int potentialCrash = 0;
 int crash = 0;
+bool isSDCard = false;
+String crashFile = "/crashData.csv";
 int16_t crash_accelerometer[five_second_length]; // For the 5 seconds of data AFTER a potential crash
 int16_t crash_gyroscope[five_second_length];
 int32_t crash_times[five_second_length];
-int crashIDX; 
+int crashIDX = 0; 
 
+int16_t current_accelerometer;
 int16_t history_accelerometer[two_second_length]; // For the 2 seconds of history BEFORE the crash 
 int16_t history_gyroscope[two_second_length];
 int32_t history_times[two_second_length];
 
-int64_t largestAccelTime = 0;
+int32_t largestAccelTime = 0;
 float largestAccel = 0;
 
 int64_t delta_t;
@@ -54,12 +62,46 @@ float power_of(float number, int power){
   return running;
 }
 
-int16_t standardize_xyz(int32_t values[3]){
-  return sqrt((power_of((float)accelerometer[0], 2) + power_of((float)accelerometer[1], 2) + power_of((float)accelerometer[2], 2)));
+int32_t standardize_xyz(int32_t values[3]){
+  return sqrt((power_of((float)values[0], 2) + power_of((float)values[1], 2) + power_of((float)values[2], 2)));
+}
+
+void initializeSD(){
+  if(!isSDCard){
+    return;
+  }
+  File file = SD.open(crashFile, FILE_WRITE);
+  file.println("accelerometer(mg's),gyroscope(dps),time(us)");
+  file.close();
+}
+
+void crash_data_to_SD(int16_t accel[five_second_length], int16_t gyro[five_second_length], int32_t times[five_second_length]){
+  if (!isSDCard){
+    return;
+  }
+  File file = SD.open(crashFile, FILE_APPEND);
+  // for (int k = 0; k < two_second_length; k++){
+  //   file.print(history_accelerometer[i]);
+  //   file.print(history_gyroscope[i]);
+  //   file.println(history_times[i]);
+  //   k++;
+  // }
+  for(i = 0; i < crashIDX; i++){
+    file.print(accel[i]);
+    file.print(",");
+    file.print(gyro[i]);
+    file.print(",");
+    file.println(times[i]);
+  }
+  file.close();
 }
 
 void setup() {
   Serial.begin(115200); 
+  Serial.print("\n");
+  pinMode(RED, OUTPUT);
+  pinMode(BLUE, OUTPUT);
+  pinMode(GREEN, OUTPUT);
   bus.begin(sdaPin, sclPin);
 
   AccGyr.begin();
@@ -73,8 +115,17 @@ void setup() {
   SerialBT.begin("Projekt Valkry"); // Turns on Bluetooth Serial
   SerialBT.setTimeout(50); // Doesn't wait long if a line has no newline
 
+  if (!SD.begin(5)) { // CS pin = 5
+     Serial.println("Card mount failed");
+     isSDCard = false;
+  }
+  else{
+    Serial.println("SD Card Mounted");
+    isSDCard = true;
+    initializeSD();
+  }
+
   idx = 0;
-  
 }
 
 void loop() {
@@ -84,23 +135,28 @@ void loop() {
   end_time = esp_timer_get_time();
 
   avg_time = (start_time + end_time) / 2;
+  current_accelerometer = standardize_xyz(accelerometer);
 
-  history_accelerometer[idx] = standardize_xyz(accelerometer); // Standardizes acceleration to one vector
-  history_gyroscope[idx] = standardize_xyz(gyroscope); // Standardizes gyro to one vector
-  history_times[idx] = avg_time; 
+  if (potentialCrash != 1){
+    history_accelerometer[idx] = standardize_xyz(accelerometer); // Standardizes acceleration to one vector
+    history_gyroscope[idx] = standardize_xyz(gyroscope)/1000; // Standardizes gyro to one vector
+    history_times[idx] = avg_time; 
+  }
+ 
   
 
   // If potential crash detected 
-  if (history_accelerometer[idx] >= limit){
-    Serial.println(history_accelerometer[idx]);
+  if (current_accelerometer >= limit){
+    Serial.println(current_accelerometer);
     Serial.println("We have exceeded the limit my friend");
 
     potentialCrash = 1; 
-    largestAccelTime = avg_time; // also t0 
+    digitalWrite(RED, HIGH);
 
     // Find peak of crash ie. find the highest number of g's exerted on the device
-    if (largestAccel < history_accelerometer[idx]){
-      largestAccel = history_accelerometer[idx];
+    if (largestAccel < current_accelerometer){
+      largestAccel = current_accelerometer;
+      largestAccelTime = avg_time;
     }
 
   }
@@ -108,36 +164,41 @@ void loop() {
     This portion stores the 5 secs AFTER the suspected crash 
     It stores all the values after the crash to be analyzed by the next portion of the if statement
   */
-  else if (potentialCrash == 1 && (history_times[idx] - ((largestAccelTime)/1000) < 5)){
-    crashIDX = five_second_length;
-    for(crashIDX = five_second_length; crashIDX > 0; i--){
-
-      start_time = esp_timer_get_time();
-      AccGyr.Get_X_Axes(accelerometer);
-      AccGyr.Get_G_Axes(gyroscope);
-      end_time = esp_timer_get_time();
-
-      avg_time = (start_time + end_time) / 2;
-
+  if (potentialCrash == 1 && (avg_time - (largestAccelTime)) < 5000000){
+    if (!(crashIDX > five_second_length - 1)){
       crash_accelerometer[crashIDX] = standardize_xyz(accelerometer); // Standardizes acceleration to one vector
-      crash_gyroscope[crashIDX] = standardize_xyz(gyroscope); // Standardizes gyro to one vector
-      crash_times[crashIDX] = avg_time; 
-
+      crash_gyroscope[crashIDX] = standardize_xyz(gyroscope)/1000; // Standardizes gyro to one vector
+      crash_times[crashIDX] = avg_time;
+      
+      crashIDX++;
     }
-    
   }
 
   /*DECISION PART OF THE CRASH TEST
     This if statement is after the 5 seconds of a potential crash
     this is where we analyze data from it, and determine if it is a crash or not 
   */
-  else if (potentialCrash == 1 && (history_times[idx] - ((largestAccelTime)/1000) >= 5)){ //If 5 second window after crash is over
-    delta_t = history_times[idx] - ((largestAccelTime)/1000);
-    
+  else if (potentialCrash == 1 && (avg_time - (largestAccelTime)) >= 5000000){ //If 5 second window after crash is over
+    crash_data_to_SD(crash_accelerometer, crash_gyroscope, crash_times);
     potentialCrash = 0;
+    digitalWrite(RED, LOW);
+    if (crash == 1){
+      digitalWrite(RED, HIGH);
+    }
+    else if (crash == 0){
+      digitalWrite(GREEN, HIGH);
+    }
+    delay(1000);
+    digitalWrite(GREEN, LOW);
+    digitalWrite(RED, LOW);
+    largestAccel = 0;
+    largestAccelTime = 0;
+    crashIDX = 0;
   }
 
-  idx++;
+  if (potentialCrash != 1){
+    idx++;
+  }
   if (idx >= two_second_length){
     idx = 0;
   }
