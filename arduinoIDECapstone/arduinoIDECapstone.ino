@@ -7,7 +7,7 @@
 
 #define sdaPin 21
 #define sclPin 22
-#define limit 5000 // Limit for flagging a potential crash in mg, 12 g's or 12000 mg's
+#define limit 13000 // Limit for flagging a potential crash in mg, 12 g's or 12000 mg's set at 13,000 to account for gravity
 
 #define RED 27
 #define BLUE 12
@@ -25,9 +25,9 @@ BluetoothSerial SerialBT;
 int32_t accelerometer[3]; // Accelerometer will hold 3 values for x y and z
 int32_t gyroscope[3]; // gyroscope will hold 3 values for x y and z
 
-int32_t start_time; 
-int32_t end_time;
-int32_t avg_time; // For discovering how long the "spike" was
+uint32_t start_time; 
+uint32_t end_time;
+uint32_t avg_time; // For discovering how long the "spike" was
 
 
 int idx;
@@ -41,17 +41,19 @@ bool isSDCard = false;
 String crashFile = "/crashData.csv";
 int16_t crash_accelerometer[five_second_length]; // For the 5 seconds of data AFTER a potential crash
 int16_t crash_gyroscope[five_second_length];
-int32_t crash_times[five_second_length];
+uint32_t crash_times[five_second_length];
 int crashIDX = 0; 
 
 int16_t current_accelerometer;
 int16_t history_accelerometer[two_second_length]; // For the 2 seconds of history BEFORE the crash 
 int16_t history_gyroscope[two_second_length];
-int32_t history_times[two_second_length];
+uint32_t history_times[two_second_length];
 
-int32_t largestAccelTime; //Records the time that the largest accel had taken place 
+uint32_t largestAccelTime; //Records the time that the largest accel had taken place 
 float largestAccel = 0; //records the magnitutde of the largest accleration during a crash
-int larges_accel_idx;
+int largestAccel_idx;
+
+bool canCrash = true;
 
 float power_of(float number, int power){
   float running = 1;
@@ -70,25 +72,26 @@ void initializeSD(){
     return;
   }
   File file = SD.open(crashFile, FILE_WRITE);
-  file.println("accelerometer(mg's),gyroscope(dps),time(us)");
   file.close();
 }
 
 void crash_data_to_SD(
-  int16_t history_accel[two_second_length], history_gyro[two_second_length], hisory_times[two_second_length],
-  int16_t accel[five_second_length], int16_t gyro[five_second_length], int32_t times[five_second_length]
+  int16_t history_accel[two_second_length], int16_t history_gyro[two_second_length], uint32_t hisory_times[two_second_length],
+  int16_t accel[five_second_length], int16_t gyro[five_second_length], uint32_t times[five_second_length]
 ){
   if (!isSDCard){
     return;
   }
-  File file = SD.open(crashFile, FILE_APPEND);
+  File file = SD.open(crashFile, FILE_WRITE);
+  file.println("accelerometer(mg's),gyroscope(dps),time(us)");
 
   for (int k = 0; k < two_second_length; k++){
-    file.print(history_accelerometer[i]);
+    int slot = (idx + 1 + k) % two_second_length;
+    file.print(history_accelerometer[slot]);
     file.print(",");
-    file.print(history_gyroscope[i]);
+    file.print(history_gyroscope[slot]);
     file.print(",");
-    file.println(history_times[i]);
+    file.println(history_times[slot]);
   }
 
   for(i = 0; i < crashIDX; i++){
@@ -112,6 +115,7 @@ void setup() {
   pinMode(BLUE, OUTPUT);
   pinMode(GREEN, OUTPUT);
   bus.begin(sdaPin, sclPin);
+  bus.setClock(400000);
 
   AccGyr.begin();
   AccGyr.Enable_X();
@@ -143,7 +147,7 @@ void loop() {
   AccGyr.Get_G_Axes(gyroscope);
   end_time = esp_timer_get_time();
 
-  avg_time = (start_time + end_time) / 2;
+  avg_time = start_time + (end_time - start_time) / 2; // avoids overflow as opposed to a direct (start_time + end_time) / 2; averaging scheme
   current_accelerometer = standardize_xyz(accelerometer);
 
   if (potentialCrash != 1){
@@ -155,12 +159,12 @@ void loop() {
   
 
   // If potential crash detected 
-  if (current_accelerometer >= limit){
+  if (current_accelerometer >= limit && canCrash){
     Serial.println(current_accelerometer);
     Serial.println("We have exceeded the limit my friend");
 
     potentialCrash = 1; 
-    digitalWrite(RED, HIGH);
+    digitalWrite(BLUE, HIGH);
 
     // Find peak of crash ie. find the highest number of g's exerted on the device
     if (largestAccel < current_accelerometer){
@@ -169,6 +173,10 @@ void loop() {
     }
 
   }
+  else if (potentialCrash == 1 && current_accelerometer < limit && canCrash){
+    canCrash = false;
+  }
+  
   /*
     This portion stores the 5 secs AFTER the suspected crash 
     It stores all the values after the crash to be analyzed by the next portion of the if statement
@@ -187,10 +195,21 @@ void loop() {
     This if statement is after the 5 seconds of a potential crash
     this is where we analyze data from it, and determine if it is a crash or not 
   */
+
+
+  /*
+    - Needs to identify which axis is down BEFORE the crash happens so that we can distinguish between somehow who simply 
+    stopped on a trail, vs someone who crashed then the bike stopped 
+    - Needs to measure the amount of acceleration AFTER the potentialCrash happens; if there is one or two large but less 
+    than the original value spikes then it s most likely a crash
+    - Needs to combine the detection from the one or two accelerations with gyro data, if a crash, the gyro will often be 
+    large and quick twists from the bike 
+  */
   else if (potentialCrash == 1 && (avg_time - (largestAccelTime)) >= 5000000){ //If 5 second window after crash is over
-    crash_data_to_SD(crash_accelerometer, crash_gyroscope, crash_times);
+    crash_data_to_SD(history_accelerometer, history_gyroscope, history_times, crash_accelerometer, crash_gyroscope, crash_times); // Writes 5 secs after crash and 2 secs before to SD card
+
     potentialCrash = 0;
-    digitalWrite(RED, LOW);
+    digitalWrite(BLUE, LOW);
     if (crash == 1){
       digitalWrite(RED, HIGH);
     }
@@ -203,6 +222,7 @@ void loop() {
     largestAccel = 0;
     largestAccelTime = 0;
     crashIDX = 0;
+    canCrash = true;
   }
 
   if (potentialCrash != 1){
