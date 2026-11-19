@@ -49,10 +49,9 @@ int16_t history_accelerometer[two_second_length]; // For the 2 seconds of histor
 int16_t history_gyroscope[two_second_length];
 int32_t history_times[two_second_length];
 
-int32_t largestAccelTime = 0;
-float largestAccel = 0;
-
-int64_t delta_t;
+int32_t largestAccelTime; //Records the time that the largest accel had taken place 
+float largestAccel = 0; //records the magnitutde of the largest accleration during a crash
+int larges_accel_idx;
 
 float power_of(float number, int power){
   float running = 1;
@@ -75,23 +74,33 @@ void initializeSD(){
   file.close();
 }
 
-void crash_data_to_SD(int16_t accel[five_second_length], int16_t gyro[five_second_length], int32_t times[five_second_length]){
+void crash_data_to_SD(
+  int16_t history_accel[two_second_length], history_gyro[two_second_length], hisory_times[two_second_length],
+  int16_t accel[five_second_length], int16_t gyro[five_second_length], int32_t times[five_second_length]
+){
   if (!isSDCard){
     return;
   }
   File file = SD.open(crashFile, FILE_APPEND);
-  // for (int k = 0; k < two_second_length; k++){
-  //   file.print(history_accelerometer[i]);
-  //   file.print(history_gyroscope[i]);
-  //   file.println(history_times[i]);
-  //   k++;
-  // }
+
+  for (int k = 0; k < two_second_length; k++){
+    file.print(history_accelerometer[i]);
+    file.print(",");
+    file.print(history_gyroscope[i]);
+    file.print(",");
+    file.println(history_times[i]);
+  }
+
   for(i = 0; i < crashIDX; i++){
     file.print(accel[i]);
     file.print(",");
     file.print(gyro[i]);
     file.print(",");
     file.println(times[i]);
+    
+    if (times[i] == largestAccelTime){
+      largestAccel_idx = i;
+    }
   }
   file.close();
 }
