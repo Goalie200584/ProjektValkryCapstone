@@ -4,19 +4,10 @@
 #include <imu_regs.h>
 #include <BluetoothSerial.h>
 #include <SD.h>
+#include <config.h>
+#include <crash.h>
 
-#define sdaPin 21
-#define sclPin 22
-#define limit 13000 // Limit for flagging a potential crash in mg, 12 g's or 12000 mg's set at 13,000 to account for gravity
 
-#define RED 27
-#define BLUE 12
-#define GREEN 14
-
-#define frequency 833
-
-const int two_second_length = frequency * 2;
-const int five_second_length = frequency * 5;
 
 TwoWire bus = TwoWire(1); // starts I2C
 ISM330DLCSensor AccGyr(&bus, ISM330DLC_ACC_GYRO_I2C_ADDRESS_LOW); // Initializes IMU
@@ -45,6 +36,7 @@ uint32_t crash_times[five_second_length];
 int crashIDX = 0; 
 
 int16_t current_accelerometer;
+
 int16_t history_accelerometer[two_second_length]; // For the 2 seconds of history BEFORE the crash 
 int16_t history_gyroscope[two_second_length];
 uint32_t history_times[two_second_length];
@@ -55,7 +47,7 @@ int largestAccel_idx;
 
 bool canCrash = true;
 
-float power_of(float number, int power){
+float power_of(float number, int power){ // raises number to certain power
   float running = 1;
   for (int i = 0; i < power; i++){
     running = running * number;
@@ -63,57 +55,55 @@ float power_of(float number, int power){
   return running;
 }
 
-int32_t standardize_xyz(int32_t values[3]){
+int32_t standardize_xyz(int32_t values[3]){ // standardizes 3 vectors into a magnitude 
   return sqrt((power_of((float)values[0], 2) + power_of((float)values[1], 2) + power_of((float)values[2], 2)));
 }
 
-void initializeSD(){
+void initializeSD(){ // "Format" file 
   if(!isSDCard){
     return;
   }
   File file = SD.open(crashFile, FILE_WRITE);
   file.close();
 }
-
-void crash_data_to_SD(
+void crash_data_to_SD( // Writes crash data to SD card from memory 
   int16_t history_accel[two_second_length], int16_t history_gyro[two_second_length], uint32_t hisory_times[two_second_length],
   int16_t accel[five_second_length], int16_t gyro[five_second_length], uint32_t times[five_second_length]
-){
-  if (!isSDCard){
-    return;
-  }
-  File file = SD.open(crashFile, FILE_WRITE);
-  file.println("accelerometer(mg's),gyroscope(dps),time(us)");
+  ){
 
-  for (int k = 0; k < two_second_length; k++){
-    int slot = (idx + 1 + k) % two_second_length;
-    file.print(history_accelerometer[slot]);
-    file.print(",");
-    file.print(history_gyroscope[slot]);
-    file.print(",");
-    file.println(history_times[slot]);
-  }
-
-  for(i = 0; i < crashIDX; i++){
-    file.print(accel[i]);
-    file.print(",");
-    file.print(gyro[i]);
-    file.print(",");
-    file.println(times[i]);
-    
-    if (times[i] == largestAccelTime){
-      largestAccel_idx = i;
+    if (!isSDCard){
+      return;
     }
-  }
-  file.close();
+    File file = SD.open(crashFile, FILE_WRITE);
+    file.println("accelerometer(mg's),gyroscope(dps),time(us)");
+
+    for (int k = 0; k < two_second_length; k++){
+      int slot = (idx + 1 + k) % two_second_length;
+      file.print(history_accelerometer[slot]);
+      file.print(",");
+      file.print(history_gyroscope[slot]);
+      file.print(",");
+      file.println(history_times[slot]);
+    }
+
+    for(i = 0; i < crashIDX; i++){
+      file.print(accel[i]);
+      file.print(",");
+      file.print(gyro[i]);
+      file.print(",");
+      file.println(times[i]);
+    }
+
+    file.close();
 }
+
+
 
 void setup() {
   Serial.begin(115200); 
   Serial.print("\n");
-  pinMode(RED, OUTPUT);
-  pinMode(BLUE, OUTPUT);
-  pinMode(GREEN, OUTPUT);
+  pinMode(buzzerPin, OUTPUT);
+  pinMode(cancelPin, INPUT);
   bus.begin(sdaPin, sclPin);
   bus.setClock(400000);
 
@@ -149,35 +139,33 @@ void loop() {
 
   avg_time = start_time + (end_time - start_time) / 2; // avoids overflow as opposed to a direct (start_time + end_time) / 2; averaging scheme
   current_accelerometer = standardize_xyz(accelerometer);
-
   if (potentialCrash != 1){
     history_accelerometer[idx] = standardize_xyz(accelerometer); // Standardizes acceleration to one vector
     history_gyroscope[idx] = standardize_xyz(gyroscope)/1000; // Standardizes gyro to one vector
     history_times[idx] = avg_time; 
   }
- 
-  
 
-  // If potential crash detected 
-  if (current_accelerometer >= limit && canCrash){
+  // If potential crash detected i.e. if acceleration value is past threshold 
+  if (current_accelerometer >= accel_limit && canCrash){
     Serial.println(current_accelerometer);
-    Serial.println("We have exceeded the limit my friend");
+    Serial.println("We have exceeded the accel_limit my friend");
 
-    potentialCrash = 1; 
-    digitalWrite(BLUE, HIGH);
+    potentialCrash = 1; // Notifies board that a crash may hvae occured 
+  
 
     // Find peak of crash ie. find the highest number of g's exerted on the device
     if (largestAccel < current_accelerometer){
       largestAccel = current_accelerometer;
       largestAccelTime = avg_time;
+      largestAccel_idx = crashIDX;
     }
 
   }
-  else if (potentialCrash == 1 && current_accelerometer < limit && canCrash){
+  else if (potentialCrash == 1 && current_accelerometer < accel_limit && canCrash){
     canCrash = false;
   }
   
-  /*
+  /*(history_)
     This portion stores the 5 secs AFTER the suspected crash 
     It stores all the values after the crash to be analyzed by the next portion of the if statement
   */
@@ -186,7 +174,6 @@ void loop() {
       crash_accelerometer[crashIDX] = standardize_xyz(accelerometer); // Standardizes acceleration to one vector
       crash_gyroscope[crashIDX] = standardize_xyz(gyroscope)/1000; // Standardizes gyro to one vector
       crash_times[crashIDX] = avg_time;
-      
       crashIDX++;
     }
   }
@@ -206,21 +193,27 @@ void loop() {
     large and quick twists from the bike 
   */
   else if (potentialCrash == 1 && (avg_time - (largestAccelTime)) >= 5000000){ //If 5 second window after crash is over
-    crash_data_to_SD(history_accelerometer, history_gyroscope, history_times, crash_accelerometer, crash_gyroscope, crash_times); // Writes 5 secs after crash and 2 secs before to SD card
-
+    // crash_data_to_SD(history_accelerometer, history_gyroscope, history_times, crash_accelerometer, crash_gyroscope, crash_times); // Writes 5 secs after crash and 2 secs before to SD card
+    Serial.println("Determining if Crash Occured");
     potentialCrash = 0;
-    digitalWrite(BLUE, LOW);
+    crash = crash_detection::detectCrash(
+      history_accelerometer, history_gyroscope, history_times, 
+      crash_accelerometer, crash_gyroscope, crash_times, 
+      largestAccel_idx, crashIDX
+    );
     if (crash == 1){
-      digitalWrite(RED, HIGH);
+      Serial.println("Crash Occured!");
+      tone(buzzerPin, 4000);
+      delay(1000);
+      noTone(buzzerPin);
     }
     else if (crash == 0){
-      digitalWrite(GREEN, HIGH);
+      Serial.println("Crash Did not Occur");
     }
-    delay(1000);
-    digitalWrite(GREEN, LOW);
-    digitalWrite(RED, LOW);
+    
     largestAccel = 0;
     largestAccelTime = 0;
+    largestAccel_idx = 0;
     crashIDX = 0;
     canCrash = true;
   }
